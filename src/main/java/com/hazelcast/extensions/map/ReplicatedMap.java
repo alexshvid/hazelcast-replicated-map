@@ -37,13 +37,14 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
     private final Member localMember;
 
     public ReplicatedMap(HazelcastInstance hazelcast, String mapName) {
-        final String name = "hz:rm:" + mapName;
+        final String name = "rm:" + mapName;
         this.hazelcast = hazelcast;
         for (int i = 0; i < mutexes.length; i++) {
             mutexes[i] = new Object();
         }
-        executor = Executors.newSingleThreadExecutor(new Factory(name + "-Replicator"));
-        scheduledExecutor = Executors.newSingleThreadScheduledExecutor(new Factory(name + "-Cleaner"));
+        final String threadName = hazelcast.getName() + "." + name;
+        executor = Executors.newSingleThreadExecutor(new Factory(threadName + ".replicator"));
+        scheduledExecutor = Executors.newSingleThreadScheduledExecutor(new Factory(threadName + ".cleaner"));
         localMember = hazelcast.getCluster().getLocalMember();
         topic = hazelcast.getTopic(name);
         topic.addMessageListener(listener);
