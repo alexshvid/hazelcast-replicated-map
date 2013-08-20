@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.hazelcast.extensions.map;
 
+import com.hazelcast.core.Member;
+import com.hazelcast.impl.MemberImpl;
 import com.hazelcast.nio.DataSerializable;
 import com.hazelcast.nio.SerializationHelper;
 
@@ -23,29 +25,58 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 
-/**
- * @mdogan 11/28/12
- */
-abstract class ReplicationMessage<K> implements DataSerializable {
+public class ReplicationMessage<K, V> implements DataSerializable {
 
-    private K key;
+    K key;
+    V value;
+    Vector vector;
+    Member origin;
+    int updateHash;
 
     public ReplicationMessage() {
     }
 
-    public ReplicationMessage(final K key) {
+    public ReplicationMessage(K key, V v, Vector vector, Member origin, int hash) {
         this.key = key;
+        this.value = v;
+        this.vector = vector;
+        this.origin = origin;
+        this.updateHash = hash;
     }
 
-    public void writeData(final DataOutput out) throws IOException {
+    public void writeData(DataOutput out) throws IOException {
         SerializationHelper.writeObject(out, key);
+        SerializationHelper.writeObject(out, value);
+        vector.writeData(out);
+        origin.writeData(out);
+        out.writeInt(updateHash);
     }
 
-    public void readData(final DataInput in) throws IOException {
+    public void readData(DataInput in) throws IOException {
         key = (K) SerializationHelper.readObject(in);
+        value = (V) SerializationHelper.readObject(in);
+        vector = new Vector();
+        vector.readData(in);
+        origin = new MemberImpl();
+        origin.readData(in);
+        updateHash = in.readInt();
     }
 
-    public K getKey() {
-        return key;
+    public boolean isRemove() {
+        return value == null;
+    }
+
+    @Override
+    public String toString() {
+        return "ReplicationMessage{" +
+               "key=" + key +
+               ", value=" + value +
+               ", vector=" + vector +
+               ", origin=" + getUpdateHash() +
+               '}';
+    }
+
+    public int getUpdateHash() {
+        return updateHash;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,10 @@ import com.hazelcast.nio.DataSerializable;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,10 +36,6 @@ public class Vector implements DataSerializable {
 
     public Vector() {
         clocks = new ConcurrentHashMap<Member, AtomicInteger>();
-    }
-
-    public Vector(final Map<Member, AtomicInteger> clocks) {
-        this.clocks = clocks;
     }
 
     public void writeData(DataOutput dataOutput) throws IOException {
@@ -58,21 +56,28 @@ public class Vector implements DataSerializable {
         }
     }
 
-    public boolean descends(Vector o) {
-        for (Member m : o.clocks.keySet()) {
-            int localClock = (clocks.get(m) == null ? 0 : clocks.get(m).get());
-            int remoteClock = (o.clocks.get(m)) == null ? 0 : o.clocks.get(m).get();
-            if (localClock < remoteClock) {
+    static boolean happenedBefore(Vector x, Vector y) {
+        Set<Member> members = new HashSet<Member>(x.clocks.keySet());
+        members.addAll(y.clocks.keySet());
+
+        boolean hasLesser = false;
+        for (Member m : members) {
+            int xi = x.clocks.get(m) != null ? x.clocks.get(m).get() : 0;
+            int yi = y.clocks.get(m) != null ? y.clocks.get(m).get() : 0;
+            if (xi > yi) {
                 return false;
             }
+            if (xi < yi) {
+                hasLesser = true;
+            }
         }
-        return true;
+        return hasLesser;
     }
 
     @Override
     public String toString() {
         return "Vector{" +
-               "clocks=" + clocks +
-               '}';
+                "clocks=" + clocks +
+                '}';
     }
 }

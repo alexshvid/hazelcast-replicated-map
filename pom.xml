@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2012, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -23,11 +23,11 @@
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-replicated-map</artifactId>
     <packaging>jar</packaging>
-    <version>0.5</version>
+    <version>0.6</version>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jdk.version>1.6</jdk.version>
+        <jdk.version>1.5</jdk.version>
         <target.dir>target</target.dir>
         
         <maven.compiler.plugin.version>2.3.2</maven.compiler.plugin.version>
@@ -35,7 +35,8 @@
         <maven.source.plugin.version>2.1.2</maven.source.plugin.version>
         <maven.bundle.plugin.version>2.3.6</maven.bundle.plugin.version>
         
-        <hazelcast.version>2.4</hazelcast.version>
+        <hazelcast.version>2.6.1</hazelcast.version>
+        <log4j.version>1.2.12</log4j.version>
         <junit.version>4.10</junit.version>
     </properties>
 
@@ -163,6 +164,13 @@
             <artifactId>hazelcast</artifactId>
             <version>${hazelcast.version}</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>log4j</groupId>
+            <artifactId>log4j</artifactId>
+            <version>${log4j.version}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

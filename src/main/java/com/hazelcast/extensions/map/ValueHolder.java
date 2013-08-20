@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,36 +16,20 @@
 
 package com.hazelcast.extensions.map;
 
-import com.hazelcast.nio.DataSerializable;
-import com.hazelcast.nio.SerializationHelper;
-
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
-
-public class ValueHolder<V> implements DataSerializable {
+public class ValueHolder<V> {
 
     private V value;
     private Vector vector;
+    private int latestUpdateHash = 0;
     private long updateTime = System.currentTimeMillis();
 
     public ValueHolder() {
     }
 
-    public ValueHolder(V value, Vector vector) {
+    public ValueHolder(V value, Vector vector, int hash) {
         this.value = value;
         this.vector = vector;
-    }
-
-    public void writeData(DataOutput dataOutput) throws IOException {
-        SerializationHelper.writeObject(dataOutput, value);
-        vector.writeData(dataOutput);
-    }
-
-    public void readData(DataInput dataInput) throws IOException {
-        value = (V) SerializationHelper.readObject(dataInput);
-        vector = new Vector();
-        vector.readData(dataInput);
+        this.latestUpdateHash = hash;
     }
 
     public V getValue() {
@@ -56,8 +40,9 @@ public class ValueHolder<V> implements DataSerializable {
         return vector;
     }
 
-    public void setValue(V value) {
+    public void setValue(V value, int hash) {
         this.value = value;
+        this.latestUpdateHash = hash;
         this.updateTime = System.currentTimeMillis();
     }
 
@@ -65,12 +50,18 @@ public class ValueHolder<V> implements DataSerializable {
         return updateTime;
     }
 
+    public int getLatestUpdateHash() {
+        return latestUpdateHash;
+    }
+
     @Override
     public String toString() {
-        return "ValueHolder{" +
-               "value=" + value +
-               ", vector=" + vector +
-               '}';
+        final StringBuilder sb = new StringBuilder("ValueHolder{");
+        sb.append("value=").append(value);
+        sb.append(", vector=").append(vector);
+        sb.append(", latestUpdateHash=").append(latestUpdateHash);
+        sb.append('}');
+        return sb.toString();
     }
 }
 

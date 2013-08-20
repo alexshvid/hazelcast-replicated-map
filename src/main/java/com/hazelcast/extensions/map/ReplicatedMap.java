@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,13 +32,11 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
     private final Object[] mutexes = new Object[32];
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduledExecutor;
-    private final HazelcastInstance hazelcast;
-    private final ITopic<ReplicationMessage<K>> topic;
+    private final ITopic<ReplicationMessage<K, V>> topic;
     private final Member localMember;
 
     public ReplicatedMap(HazelcastInstance hazelcast, String mapName) {
         final String name = "rm:" + mapName;
-        this.hazelcast = hazelcast;
         for (int i = 0; i < mutexes.length; i++) {
             mutexes[i] = new Object();
         }
@@ -56,7 +54,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         return vh == null ? null : vh.getValue();
     }
 
-    ValueHolder<V> getV(Object key) {
+    public ValueHolder<V> getValueHolder(Object key) {
         return map.get(key);
     }
 
@@ -65,16 +63,17 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         synchronized (getMutex(key)) {
             final ValueHolder<V> old = map.get(key);
             final Vector vector;
+            int hash = localMember.getUuid().hashCode();
             if (old == null) {
                 vector = new Vector();
-                map.put(key, new ValueHolder<V>(value, vector));
+                map.put(key, new ValueHolder<V>(value, vector, hash));
             } else {
                 oldValue = old.getValue();
                 vector = old.getVector();
-                map.get(key).setValue(value);
+                map.get(key).setValue(value, hash);
             }
             incrementClock(vector);
-            topic.publish(new UpdateMessage(key, value, vector, localMember));
+            topic.publish(new ReplicationMessage<K, V>(key, value, vector, localMember, hash));
         }
         return oldValue;
     }
@@ -89,9 +88,9 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
             } else {
                 vector = current.getVector();
                 old = current.getValue();
-                current.setValue(null);
+                current.setValue(null, 0);
                 incrementClock(vector);
-                topic.publish(new UpdateMessage(key, null, vector, localMember));
+                topic.publish(new ReplicationMessage(key, null, vector, localMember, localMember.getUuid().hashCode()));
             }
         }
         return old;
@@ -158,7 +157,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
     }
 
     private Object getMutex(final Object key) {
-        return mutexes[Math.abs(key.hashCode()) % mutexes.length];
+        return mutexes[key.hashCode() != Integer.MIN_VALUE ? Math.abs(key.hashCode()) % mutexes.length : 0];
     }
 
     public void destroy() {
@@ -168,75 +167,62 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         map.clear();
     }
 
-    private class ReplicationListener implements MessageListener<ReplicationMessage<K>> {
+    private class ReplicationListener implements MessageListener<ReplicationMessage<K, V>> {
 
-        public void onMessage(final Message<ReplicationMessage<K>> message) {
+        public void onMessage(final Message<ReplicationMessage<K, V>> message) {
             executor.submit(new Runnable() {
                 public void run() {
-                    if (message.getMessageObject() instanceof UpdateMessage) {
-                        processUpdateMessage((UpdateMessage<K, V>) message.getMessageObject());
-                    } else {
-                        processConflictMessage((ConflictMessage<K>) message.getMessageObject());
-                    }
+                    processUpdateMessage(message.getMessageObject());
                 }
             });
         }
 
-        private void processConflictMessage(final ConflictMessage<K> conflict) {
-            if (isMaster()) {
-                synchronized (getMutex(conflict.getKey())) {
-                    ValueHolder<V> valueHolder = map.get(conflict.getKey());
-                    put(conflict.getKey(), valueHolder != null ? valueHolder.getValue() : null);
-                }
-            }
-        }
-
-        private void processUpdateMessage(final UpdateMessage<K, V> update) {
+        private void processUpdateMessage(final ReplicationMessage<K, V> update) {
             if (localMember.equals(update.origin)) {
                 return;
             }
-            synchronized (getMutex(update.getKey())) {
-                final ValueHolder<V> localEntry = map.get(update.getKey());
+            synchronized (getMutex(update.key)) {
+                final ValueHolder<V> localEntry = map.get(update.key);
                 if (localEntry == null) {
                     if (!update.isRemove()) {
-                        map.put(update.getKey(), new ValueHolder<V>(update.value, update.vector));
+                        map.put(update.key, new ValueHolder<V>(update.value, update.vector, update.getUpdateHash()));
                     }
                 } else {
-                    final Vector localVector = localEntry.getVector();
-                    final Vector remoteVector = update.vector;
-                    if (localVector.descends(remoteVector)) {
+                    final Vector currentVector = localEntry.getVector();
+                    final Vector updateVector = update.vector;
+                    if (Vector.happenedBefore(updateVector, currentVector)) {
                         // ignore the update. This is an old update
-                    } else if (remoteVector.descends(localVector)) {
+                    } else if (Vector.happenedBefore(currentVector, updateVector)) {
                         // A new update happened
                         applyTheUpdate(update, localEntry);
                     } else {
-                        // no preceding among the clocks. The older wins
-                        if (localMember.hashCode() >= update.origin.hashCode()) {
+                        // no preceding among the clocks. Lower hash wins..
+                        if (localEntry.getLatestUpdateHash() >= update.getUpdateHash()) {
                             applyTheUpdate(update, localEntry);
                         } else {
-                            applyVector(remoteVector, localVector);
-                        }
-                        if (!isMaster()) {
-                            topic.publish(new ConflictMessage<K>(update.getKey()));
+                            applyVector(updateVector, currentVector);
+                            topic.publish(new ReplicationMessage<K, V>(update.key, localEntry.getValue(),
+                                    currentVector, localMember, localEntry.getLatestUpdateHash()));
                         }
                     }
                 }
             }
         }
 
-        private void applyTheUpdate(UpdateMessage<K, V> updateMessage, ValueHolder<V> localEntry) {
+
+        private void applyTheUpdate(ReplicationMessage<K, V> update, ValueHolder<V> localEntry) {
             Vector localVector = localEntry.getVector();
-            Vector remoteVector = updateMessage.vector;
-            localEntry.setValue(updateMessage.value);
+            Vector remoteVector = update.vector;
+            localEntry.setValue(update.value, update.getUpdateHash());
             applyVector(remoteVector, localVector);
         }
 
-        private void applyVector(Vector remote, Vector local) {
-            for (Member m : remote.clocks.keySet()) {
-                final AtomicInteger localClock = local.clocks.get(m);
-                final AtomicInteger remoteClock = remote.clocks.get(m);
-                if (smaller(localClock, remoteClock)) {
-                    local.clocks.put(m, new AtomicInteger(remoteClock.get()));
+        private void applyVector(Vector update, Vector current) {
+            for (Member m : update.clocks.keySet()) {
+                final AtomicInteger currentClock = current.clocks.get(m);
+                final AtomicInteger updateClock = update.clocks.get(m);
+                if (smaller(currentClock, updateClock)) {
+                    current.clocks.put(m, new AtomicInteger(updateClock.get()));
                 }
             }
         }
@@ -246,10 +232,6 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
             int i2 = int2 == null ? 0 : int2.get();
             return i1 < i2;
         }
-    }
-
-    private boolean isMaster() {
-        return hazelcast.getCluster().getMembers().iterator().next().localMember();
     }
 
     private class Cleaner implements Runnable {

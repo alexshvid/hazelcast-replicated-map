@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2012, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2013, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,19 +30,23 @@ import java.util.concurrent.TimeUnit;
 import static junit.framework.Assert.assertTrue;
 import static junit.framework.Assert.fail;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 public class ReplicatedMapTest {
 
     static {
         System.setProperty("hazelcast.version.check.enabled", "false");
+        System.setProperty("hazelcast.logging.type", "log4j");
+        System.setProperty("hazelcast.multicast.group", "224.3.3.3");
         System.setProperty("hazelcast.local.localAddress", "127.0.0.1");
+        System.setProperty("hazelcast.wait.seconds.before.join", "0");
         System.setProperty("java.net.preferIPv4Stack", "true");
     }
 
     @Test
     public void test() throws InterruptedException {
         Config config = new Config();
-        final int k = 3;
+        final int k = 4;
         final HazelcastInstance[] hz = new HazelcastInstance[k];
         final ReplicatedMap<Integer, Integer> maps[] = new ReplicatedMap[k];
         for (int i = 0; i < k; i++) {
@@ -52,7 +56,7 @@ public class ReplicatedMapTest {
         hz[k - 1].getPartitionService().getPartition(1).getOwner();
         Thread.sleep(5000);
 
-        final int threadCount = 2 * k;
+        final int threadCount = 10 * k;
         final ExecutorService executorService = Executors.newCachedThreadPool();
         final CountDownLatch latch = new CountDownLatch(threadCount);
         final int entryCount = 1000;
@@ -61,15 +65,11 @@ public class ReplicatedMapTest {
             final int id = i;
             executorService.submit(new Runnable() {
                 public void run() {
-                    final ReplicatedMap<Integer, Integer> map = maps[id % k];
+                    final ReplicatedMap<Integer, Integer> map = maps[id % (k)];
                     Random random = new Random();
                     try {
                         for (int j = 0; j < entryCount; j++) {
-                            if (random.nextInt(entryCount) % 2 == 0) {
-                                map.put(random.nextInt(entryCount), random.nextInt(entryCount));
-                            } else {
-//                                map.remove(random.nextInt(entryCount));
-                            }
+                            map.put(random.nextInt(entryCount), (id + 1) * 10 + random.nextInt(9));
                         }
                     } catch (Throwable t) {
                         t.printStackTrace();
@@ -82,21 +82,29 @@ public class ReplicatedMapTest {
         }
         assertTrue(latch.await(threadCount * entryCount * 20, TimeUnit.MILLISECONDS));
         executorService.shutdown();
-        Thread.sleep(entryCount * 10);
+        Thread.sleep(entryCount * 100);
 
-        for (int i = 1; i < k; i++) {
-            assertEquals(maps[0].size(), maps[i].size());
-            for (Integer key : maps[0].keySet()) {
-                try {
-                    assertEquals(maps[0].get(key), maps[i].get(key));
-                } catch (AssertionError e) {
-                    System.out.println(e.getMessage());
-                    System.out.println("000 = " + maps[0].getV(key).getVector());
-                    System.out.println("iii = " + maps[i].getV(key).getVector());
-                    System.out.println();
-//                    throw e;
+        Throwable t = null;
+        try {
+            for (int i = 1; i < k; i++) {
+                assertEquals(maps[0].size(), maps[i].size());
+                for (Integer key : maps[0].keySet()) {
+                    try {
+                        assertEquals(maps[0].get(key), maps[i].get(key));
+                    } catch (AssertionError e) {
+                        System.err.println(e);
+                        System.err.println("key=" + key);
+                        System.err.println("0 = " + maps[0].getValueHolder(key).getVector());
+                        System.err.println(i + " = " + maps[i].getValueHolder(key).getVector());
+                        System.err.println();
+                        t = e;
+                    }
                 }
             }
+        } finally {
+            Hazelcast.shutdownAll();
         }
+
+        assertNull(t);
     }
 }
