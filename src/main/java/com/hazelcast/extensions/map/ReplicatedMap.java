@@ -29,6 +29,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
 
     private final ConcurrentHashMap<K, ValueHolder<V>> map = new ConcurrentHashMap<K, ValueHolder<V>>();
     private final ReplicationListener listener = new ReplicationListener();
+    private final String topicId;
     private final Object[] mutexes = new Object[32];
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduledExecutor;
@@ -45,7 +46,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         scheduledExecutor = Executors.newSingleThreadScheduledExecutor(new Factory(threadName + ".cleaner"));
         localMember = hazelcast.getCluster().getLocalMember();
         topic = hazelcast.getTopic(name);
-        topic.addMessageListener(listener);
+        topicId = topic.addMessageListener(listener);
         scheduledExecutor.scheduleWithFixedDelay(new Cleaner(), 5, 5, TimeUnit.SECONDS);
     }
 
@@ -61,16 +62,16 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
     public V put(K key, V value) {
         V oldValue = null;
         synchronized (getMutex(key)) {
-            final ValueHolder<V> old = map.get(key);
+            final ValueHolder<V> current = map.get(key);
             final Vector vector;
             int hash = localMember.getUuid().hashCode();
-            if (old == null) {
+            if (current == null) {
                 vector = new Vector();
                 map.put(key, new ValueHolder<V>(value, vector, hash));
             } else {
-                oldValue = old.getValue();
-                vector = old.getVector();
-                map.get(key).setValue(value, hash);
+                oldValue = current.getValue();
+                vector = current.getVector();
+                current.setValue(value, hash);
             }
             incrementClock(vector);
             topic.publish(new ReplicationMessage<K, V>(key, value, vector, localMember, hash));
@@ -161,7 +162,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
     }
 
     public void destroy() {
-        topic.removeMessageListener(listener);
+    	topic.removeMessageListener(topicId);
         executor.shutdownNow();
         scheduledExecutor.shutdownNow();
         map.clear();

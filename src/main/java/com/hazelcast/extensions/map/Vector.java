@@ -16,12 +16,6 @@
 
 package com.hazelcast.extensions.map;
 
-import com.hazelcast.core.Member;
-import com.hazelcast.impl.MemberImpl;
-import com.hazelcast.nio.DataSerializable;
-
-import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Map;
@@ -30,15 +24,23 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.hazelcast.core.Member;
+import com.hazelcast.instance.MemberImpl;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.DataSerializable;
+
 public class Vector implements DataSerializable {
 
-    final Map<Member, AtomicInteger> clocks;
+	private static final long serialVersionUID = -8566139603253326256L;
+
+	final Map<Member, AtomicInteger> clocks;
 
     public Vector() {
         clocks = new ConcurrentHashMap<Member, AtomicInteger>();
     }
 
-    public void writeData(DataOutput dataOutput) throws IOException {
+    public void writeData(ObjectDataOutput dataOutput) throws IOException {
         dataOutput.writeInt(clocks.size());
         for (Entry<Member, AtomicInteger> entry : clocks.entrySet()) {
             entry.getKey().writeData(dataOutput);
@@ -46,7 +48,7 @@ public class Vector implements DataSerializable {
         }
     }
 
-    public void readData(DataInput dataInput) throws IOException {
+    public void readData(ObjectDataInput dataInput) throws IOException {
         int size = dataInput.readInt();
         for (int i = 0; i < size; i++) {
             Member m = new MemberImpl();

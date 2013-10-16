@@ -16,18 +16,19 @@
 
 package com.hazelcast.extensions.map;
 
-import com.hazelcast.core.Member;
-import com.hazelcast.impl.MemberImpl;
-import com.hazelcast.nio.DataSerializable;
-import com.hazelcast.nio.SerializationHelper;
-
-import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
+
+import com.hazelcast.core.Member;
+import com.hazelcast.instance.MemberImpl;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.DataSerializable;
 
 public class ReplicationMessage<K, V> implements DataSerializable {
 
-    K key;
+	private static final long serialVersionUID = -4815192795649067789L;
+
+	K key;
     V value;
     Vector vector;
     Member origin;
@@ -44,17 +45,17 @@ public class ReplicationMessage<K, V> implements DataSerializable {
         this.updateHash = hash;
     }
 
-    public void writeData(DataOutput out) throws IOException {
-        SerializationHelper.writeObject(out, key);
-        SerializationHelper.writeObject(out, value);
+    public void writeData(ObjectDataOutput out) throws IOException {
+    	out.writeObject(key);
+    	out.writeObject(value);
         vector.writeData(out);
         origin.writeData(out);
         out.writeInt(updateHash);
     }
 
-    public void readData(DataInput in) throws IOException {
-        key = (K) SerializationHelper.readObject(in);
-        value = (V) SerializationHelper.readObject(in);
+    public void readData(ObjectDataInput in) throws IOException {
+        key = in.readObject();
+        value = in.readObject();
         vector = new Vector();
         vector.readData(in);
         origin = new MemberImpl();
