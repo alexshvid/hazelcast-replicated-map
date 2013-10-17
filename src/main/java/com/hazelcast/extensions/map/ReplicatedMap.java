@@ -74,7 +74,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 current.setValue(value, hash);
             }
             incrementClock(vector);
-            topic.publish(new ReplicationMessage<K, V>(key, value, vector, localMember, hash));
+            topic.publish(new ReplicationMessage<K, V>(key, value, vector, localMember.getUuid(), hash));
         }
         return oldValue;
     }
@@ -91,7 +91,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 old = current.getValue();
                 current.setValue(null, 0);
                 incrementClock(vector);
-                topic.publish(new ReplicationMessage(key, null, vector, localMember, localMember.getUuid().hashCode()));
+                topic.publish(new ReplicationMessage(key, null, vector, localMember.getUuid(), localMember.getUuid().hashCode()));
             }
         }
         return old;
@@ -102,7 +102,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         if (clock != null) {
             clock.incrementAndGet();
         } else {
-            vector.clocks.put(localMember, new AtomicInteger(1));
+            vector.clocks.put(localMember.getUuid(), new AtomicInteger(1));
         }
     }
 
@@ -179,7 +179,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         }
 
         private void processUpdateMessage(final ReplicationMessage<K, V> update) {
-            if (localMember.equals(update.origin)) {
+            if (localMember.getUuid().equals(update.memberId)) {
                 return;
             }
             synchronized (getMutex(update.key)) {
@@ -191,9 +191,9 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 } else {
                     final Vector currentVector = localEntry.getVector();
                     final Vector updateVector = update.vector;
-                    if (Vector.happenedBefore(updateVector, currentVector)) {
+                    if (updateVector.happenedBefore(currentVector)) {
                         // ignore the update. This is an old update
-                    } else if (Vector.happenedBefore(currentVector, updateVector)) {
+                    } else if (currentVector.happenedBefore(updateVector)) {
                         // A new update happened
                         applyTheUpdate(update, localEntry);
                     } else {
@@ -201,9 +201,9 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                         if (localEntry.getLatestUpdateHash() >= update.getUpdateHash()) {
                             applyTheUpdate(update, localEntry);
                         } else {
-                            applyVector(updateVector, currentVector);
+                        	currentVector.applyVector(updateVector);
                             topic.publish(new ReplicationMessage<K, V>(update.key, localEntry.getValue(),
-                                    currentVector, localMember, localEntry.getLatestUpdateHash()));
+                                    currentVector, localMember.getUuid(), localEntry.getLatestUpdateHash()));
                         }
                     }
                 }
@@ -215,24 +215,9 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
             Vector localVector = localEntry.getVector();
             Vector remoteVector = update.vector;
             localEntry.setValue(update.value, update.getUpdateHash());
-            applyVector(remoteVector, localVector);
+            localVector.applyVector(remoteVector);
         }
 
-        private void applyVector(Vector update, Vector current) {
-            for (Member m : update.clocks.keySet()) {
-                final AtomicInteger currentClock = current.clocks.get(m);
-                final AtomicInteger updateClock = update.clocks.get(m);
-                if (smaller(currentClock, updateClock)) {
-                    current.clocks.put(m, new AtomicInteger(updateClock.get()));
-                }
-            }
-        }
-
-        private boolean smaller(AtomicInteger int1, AtomicInteger int2) {
-            int i1 = int1 == null ? 0 : int1.get();
-            int i2 = int2 == null ? 0 : int2.get();
-            return i1 < i2;
-        }
     }
 
     private class Cleaner implements Runnable {

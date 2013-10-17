@@ -18,8 +18,6 @@ package com.hazelcast.extensions.map;
 
 import java.io.IOException;
 
-import com.hazelcast.core.Member;
-import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
@@ -31,17 +29,17 @@ public class ReplicationMessage<K, V> implements DataSerializable {
 	K key;
     V value;
     Vector vector;
-    Member origin;
+    String memberId;
     int updateHash;
 
     public ReplicationMessage() {
     }
 
-    public ReplicationMessage(K key, V v, Vector vector, Member origin, int hash) {
+    public ReplicationMessage(K key, V v, Vector vector, String memberId, int hash) {
         this.key = key;
         this.value = v;
         this.vector = vector;
-        this.origin = origin;
+        this.memberId = memberId;
         this.updateHash = hash;
     }
 
@@ -49,7 +47,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
     	out.writeObject(key);
     	out.writeObject(value);
         vector.writeData(out);
-        origin.writeData(out);
+        out.writeUTF(memberId);
         out.writeInt(updateHash);
     }
 
@@ -58,8 +56,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
         value = in.readObject();
         vector = new Vector();
         vector.readData(in);
-        origin = new MemberImpl();
-        origin.readData(in);
+        memberId = in.readUTF();
         updateHash = in.readInt();
     }
 

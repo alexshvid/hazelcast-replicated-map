@@ -24,8 +24,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.hazelcast.core.Member;
-import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
@@ -34,16 +32,16 @@ public class Vector implements DataSerializable {
 
 	private static final long serialVersionUID = -8566139603253326256L;
 
-	final Map<Member, AtomicInteger> clocks;
+	final Map<String, AtomicInteger> clocks;
 
     public Vector() {
-        clocks = new ConcurrentHashMap<Member, AtomicInteger>();
+        clocks = new ConcurrentHashMap<String, AtomicInteger>();
     }
 
     public void writeData(ObjectDataOutput dataOutput) throws IOException {
         dataOutput.writeInt(clocks.size());
-        for (Entry<Member, AtomicInteger> entry : clocks.entrySet()) {
-            entry.getKey().writeData(dataOutput);
+        for (Entry<String, AtomicInteger> entry : clocks.entrySet()) {
+        	dataOutput.writeUTF(entry.getKey());
             dataOutput.writeInt(entry.getValue().get());
         }
     }
@@ -51,29 +49,41 @@ public class Vector implements DataSerializable {
     public void readData(ObjectDataInput dataInput) throws IOException {
         int size = dataInput.readInt();
         for (int i = 0; i < size; i++) {
-            Member m = new MemberImpl();
-            m.readData(dataInput);
+            String memberId = dataInput.readUTF();
             int clock = dataInput.readInt();
-            clocks.put(m, new AtomicInteger(clock));
+            clocks.put(memberId, new AtomicInteger(clock));
         }
     }
 
-    static boolean happenedBefore(Vector x, Vector y) {
-        Set<Member> members = new HashSet<Member>(x.clocks.keySet());
-        members.addAll(y.clocks.keySet());
+    public boolean happenedBefore(Vector that) {
+        Set<String> members = new HashSet<String>(clocks.keySet());
+        members.addAll(that.clocks.keySet());
 
         boolean hasLesser = false;
-        for (Member m : members) {
-            int xi = x.clocks.get(m) != null ? x.clocks.get(m).get() : 0;
-            int yi = y.clocks.get(m) != null ? y.clocks.get(m).get() : 0;
-            if (xi > yi) {
+        for (String m : members) {
+            int i = clocks.get(m) != null ? clocks.get(m).get() : 0;
+            int iThat = that.clocks.get(m) != null ? that.clocks.get(m).get() : 0;
+            if (i > iThat) {
                 return false;
             }
-            if (xi < yi) {
+            if (i < iThat) {
                 hasLesser = true;
             }
         }
         return hasLesser;
+    }
+    
+    public void applyVector(Vector update) {
+        for (String m : update.clocks.keySet()) {
+            AtomicInteger currentClock = clocks.get(m);
+            AtomicInteger updateClock = update.clocks.get(m);
+            if (currentClock == null) {
+            	clocks.put(m, new AtomicInteger(updateClock.get()));
+            }
+            else {
+            	while(!currentClock.compareAndSet(currentClock.get(), Math.max(currentClock.get(), updateClock.get())));
+            }
+        }
     }
 
     @Override
