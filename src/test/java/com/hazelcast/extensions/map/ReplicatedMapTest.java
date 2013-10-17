@@ -16,10 +16,10 @@
 
 package com.hazelcast.extensions.map;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.core.HazelcastInstance;
-import org.junit.Test;
+import static junit.framework.Assert.assertTrue;
+import static junit.framework.Assert.fail;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -27,10 +27,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static junit.framework.Assert.assertTrue;
-import static junit.framework.Assert.fail;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import org.junit.Test;
+
+import com.hazelcast.config.Config;
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.core.HazelcastInstance;
 
 public class ReplicatedMapTest {
 
@@ -51,7 +52,7 @@ public class ReplicatedMapTest {
         final ReplicatedMap<Integer, Integer> maps[] = new ReplicatedMap[k];
         for (int i = 0; i < k; i++) {
             hz[i] = Hazelcast.newHazelcastInstance(config);
-            maps[i] = new ReplicatedMap<Integer, Integer>(hz[i], "test");
+            maps[i] = new ReplicationService<Integer, Integer>(hz[i], "test").getMap();
         }
         hz[k - 1].getPartitionService().getPartition(1).getOwner();
         Thread.sleep(5000);

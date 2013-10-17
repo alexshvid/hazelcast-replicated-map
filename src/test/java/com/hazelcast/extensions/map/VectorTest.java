@@ -74,19 +74,4 @@ public class VectorTest {
         assertFalse(b.happenedBefore(a));
     }
 
-/*    @Test
-    public void testWhenAbsent() throws Exception {
-
-        Vector a = new Vector(new IdentityHashMap<Member, AtomicInteger>());
-        Vector b = new Vector(new IdentityHashMap<Member, AtomicInteger>());
-
-        a.clocks.put(m1, new AtomicInteger(1));
-        a.clocks.put(m2, new AtomicInteger(1));
-
-        b.clocks.put(m1, new AtomicInteger(1));
-        b.clocks.put(m2, new AtomicInteger(2));
-        b.clocks.put(m3, new AtomicInteger(1));
-
-        assertFalse(Vector.happenedBefore(a, b));
-    }*/
 }

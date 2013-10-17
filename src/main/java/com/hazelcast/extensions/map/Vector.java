@@ -86,6 +86,15 @@ public class Vector implements DataSerializable {
         }
     }
 
+    public void incrementClock(String memberId) {
+        final AtomicInteger clock = clocks.get(memberId);
+        if (clock != null) {
+            clock.incrementAndGet();
+        } else {
+            clocks.put(memberId, new AtomicInteger(1));
+        }
+    }
+    
     @Override
     public String toString() {
         return "Vector{" +

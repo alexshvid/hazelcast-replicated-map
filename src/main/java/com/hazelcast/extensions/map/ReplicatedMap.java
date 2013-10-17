@@ -16,40 +16,34 @@
 
 package com.hazelcast.extensions.map;
 
-import com.hazelcast.core.*;
-
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class ReplicatedMap<K, V> implements Map<K, V> {
 
+	private static final long CLEANUP_TTL = TimeUnit.SECONDS.toMillis(10);
+	
+	private final String mapName;
     private final ConcurrentHashMap<K, ValueHolder<V>> map = new ConcurrentHashMap<K, ValueHolder<V>>();
-    private final ReplicationListener listener = new ReplicationListener();
-    private final String topicId;
     private final Object[] mutexes = new Object[32];
-    private final ExecutorService executor;
-    private final ScheduledExecutorService scheduledExecutor;
-    private final ITopic<ReplicationMessage<K, V>> topic;
-    private final Member localMember;
+    private final ReplicationService<K, V> replicationService;
 
-    public ReplicatedMap(HazelcastInstance hazelcast, String mapName) {
-        final String name = "rm:" + mapName;
+    ReplicatedMap(String mapName, ReplicationService<K, V> replicationService) {
+    	this.mapName = mapName;
         for (int i = 0; i < mutexes.length; i++) {
             mutexes[i] = new Object();
         }
-        final String threadName = hazelcast.getName() + "." + name;
-        executor = Executors.newSingleThreadExecutor(new Factory(threadName + ".replicator"));
-        scheduledExecutor = Executors.newSingleThreadScheduledExecutor(new Factory(threadName + ".cleaner"));
-        localMember = hazelcast.getCluster().getLocalMember();
-        topic = hazelcast.getTopic(name);
-        topicId = topic.addMessageListener(listener);
-        scheduledExecutor.scheduleWithFixedDelay(new Cleaner(), 5, 5, TimeUnit.SECONDS);
+        this.replicationService = replicationService;
     }
 
+    public String getName() {
+    	return mapName;
+    }
+    
     public V get(Object key) {
         final ValueHolder<V> vh = map.get(key);
         return vh == null ? null : vh.getValue();
@@ -64,7 +58,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         synchronized (getMutex(key)) {
             final ValueHolder<V> current = map.get(key);
             final Vector vector;
-            int hash = localMember.getUuid().hashCode();
+            int hash = replicationService.getLocalMemberHash();
             if (current == null) {
                 vector = new Vector();
                 map.put(key, new ValueHolder<V>(value, vector, hash));
@@ -73,8 +67,8 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 vector = current.getVector();
                 current.setValue(value, hash);
             }
-            incrementClock(vector);
-            topic.publish(new ReplicationMessage<K, V>(key, value, vector, localMember.getUuid(), hash));
+            vector.incrementClock(replicationService.getLocalMemberId());
+            replicationService.publish(new ReplicationMessage<K, V>(key, value, vector, replicationService.getLocalMemberId(), hash));
         }
         return oldValue;
     }
@@ -90,20 +84,11 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 vector = current.getVector();
                 old = current.getValue();
                 current.setValue(null, 0);
-                incrementClock(vector);
-                topic.publish(new ReplicationMessage(key, null, vector, localMember.getUuid(), localMember.getUuid().hashCode()));
+                vector.incrementClock(replicationService.getLocalMemberId());
+                replicationService.publish(new ReplicationMessage(key, null, vector, replicationService.getLocalMemberId(), replicationService.getLocalMemberHash()));
             }
         }
         return old;
-    }
-
-    private void incrementClock(final Vector vector) {
-        final AtomicInteger clock = vector.clocks.get(localMember);
-        if (clock != null) {
-            clock.incrementAndGet();
-        } else {
-            vector.clocks.put(localMember.getUuid(), new AtomicInteger(1));
-        }
     }
 
     public boolean containsKey(Object key) {
@@ -161,93 +146,55 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
         return mutexes[key.hashCode() != Integer.MIN_VALUE ? Math.abs(key.hashCode()) % mutexes.length : 0];
     }
 
-    public void destroy() {
-    	topic.removeMessageListener(topicId);
-        executor.shutdownNow();
-        scheduledExecutor.shutdownNow();
-        map.clear();
-    }
-
-    private class ReplicationListener implements MessageListener<ReplicationMessage<K, V>> {
-
-        public void onMessage(final Message<ReplicationMessage<K, V>> message) {
-            executor.submit(new Runnable() {
-                public void run() {
-                    processUpdateMessage(message.getMessageObject());
-                }
-            });
+    
+    void processUpdateMessage(final ReplicationMessage<K, V> update) {
+        if (replicationService.getLocalMemberId().equals(update.getMemberId())) {
+            return;
         }
-
-        private void processUpdateMessage(final ReplicationMessage<K, V> update) {
-            if (localMember.getUuid().equals(update.memberId)) {
-                return;
-            }
-            synchronized (getMutex(update.key)) {
-                final ValueHolder<V> localEntry = map.get(update.key);
-                if (localEntry == null) {
-                    if (!update.isRemove()) {
-                        map.put(update.key, new ValueHolder<V>(update.value, update.vector, update.getUpdateHash()));
-                    }
+        synchronized (getMutex(update.getKey())) {
+            final ValueHolder<V> localEntry = map.get(update.getKey());
+            if (localEntry == null) {
+                if (!update.isRemove()) {
+                    map.put(update.getKey(), new ValueHolder<V>(update.getValue(), update.getVector(), update.getUpdateHash()));
+                }
+            } else {
+                final Vector currentVector = localEntry.getVector();
+                final Vector updateVector = update.getVector();
+                if (updateVector.happenedBefore(currentVector)) {
+                    // ignore the update. This is an old update
+                } else if (currentVector.happenedBefore(updateVector)) {
+                    // A new update happened
+                    applyTheUpdate(update, localEntry);
                 } else {
-                    final Vector currentVector = localEntry.getVector();
-                    final Vector updateVector = update.vector;
-                    if (updateVector.happenedBefore(currentVector)) {
-                        // ignore the update. This is an old update
-                    } else if (currentVector.happenedBefore(updateVector)) {
-                        // A new update happened
+                    // no preceding among the clocks. Lower hash wins..
+                    if (localEntry.getLatestUpdateHash() >= update.getUpdateHash()) {
                         applyTheUpdate(update, localEntry);
                     } else {
-                        // no preceding among the clocks. Lower hash wins..
-                        if (localEntry.getLatestUpdateHash() >= update.getUpdateHash()) {
-                            applyTheUpdate(update, localEntry);
-                        } else {
-                        	currentVector.applyVector(updateVector);
-                            topic.publish(new ReplicationMessage<K, V>(update.key, localEntry.getValue(),
-                                    currentVector, localMember.getUuid(), localEntry.getLatestUpdateHash()));
-                        }
+                    	currentVector.applyVector(updateVector);
+                        replicationService.publish(new ReplicationMessage<K, V>(update.getKey(), localEntry.getValue(),
+                                currentVector, replicationService.getLocalMemberId(), localEntry.getLatestUpdateHash()));
                     }
                 }
             }
         }
-
-
-        private void applyTheUpdate(ReplicationMessage<K, V> update, ValueHolder<V> localEntry) {
-            Vector localVector = localEntry.getVector();
-            Vector remoteVector = update.vector;
-            localEntry.setValue(update.value, update.getUpdateHash());
-            localVector.applyVector(remoteVector);
-        }
-
+    }
+    
+    private void applyTheUpdate(ReplicationMessage<K, V> update, ValueHolder<V> localEntry) {
+        Vector localVector = localEntry.getVector();
+        Vector remoteVector = update.getVector();
+        localEntry.setValue(update.getValue(), update.getUpdateHash());
+        localVector.applyVector(remoteVector);
     }
 
-    private class Cleaner implements Runnable {
-
-        private final long ttl = TimeUnit.SECONDS.toMillis(10);
-
-        public void run() {
-            final Iterator<ValueHolder<V>> iter = map.values().iterator();
-            final long now = System.currentTimeMillis();
-            while (iter.hasNext()) {
-                final ValueHolder<V> v = iter.next();
-                if (v.getValue() == null && (v.getUpdateTime() + ttl) < now) {
-                    iter.remove();
-                }
+    
+    void cleanup() {
+        final Iterator<ValueHolder<V>> iter = map.values().iterator();
+        final long now = System.currentTimeMillis();
+        while (iter.hasNext()) {
+            final ValueHolder<V> v = iter.next();
+            if (v.getValue() == null && (v.getUpdateTime() + CLEANUP_TTL) < now) {
+                iter.remove();
             }
-        }
-    }
-
-    private class Factory implements ThreadFactory {
-
-        private final String name;
-
-        private Factory(final String name) {
-            this.name = name;
-        }
-
-        public Thread newThread(final Runnable r) {
-            final Thread t = new Thread(r, name);
-            t.setDaemon(true);
-            return t;
         }
     }
 

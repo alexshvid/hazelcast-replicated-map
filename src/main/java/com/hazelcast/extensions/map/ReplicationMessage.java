@@ -26,11 +26,11 @@ public class ReplicationMessage<K, V> implements DataSerializable {
 
 	private static final long serialVersionUID = -4815192795649067789L;
 
-	K key;
-    V value;
-    Vector vector;
-    String memberId;
-    int updateHash;
+	private K key;
+    private V value;
+    private Vector vector;
+    private String memberId;
+    private int updateHash;
 
     public ReplicationMessage() {
     }
@@ -70,11 +70,28 @@ public class ReplicationMessage<K, V> implements DataSerializable {
                "key=" + key +
                ", value=" + value +
                ", vector=" + vector +
-               ", origin=" + getUpdateHash() +
+               ", origin=" + updateHash +
                '}';
     }
 
-    public int getUpdateHash() {
-        return updateHash;
-    }
+	K getKey() {
+		return key;
+	}
+
+	Vector getVector() {
+		return vector;
+	}
+
+	String getMemberId() {
+		return memberId;
+	}
+
+	int getUpdateHash() {
+		return updateHash;
+	}
+
+	V getValue() {
+		return value;
+	}
+
 }
