@@ -26,6 +26,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
 
 	private static final long serialVersionUID = -4815192795649067789L;
 
+	private String replicatedMap;
 	private K key;
     private V value;
     private Vector vector;
@@ -35,8 +36,9 @@ public class ReplicationMessage<K, V> implements DataSerializable {
     public ReplicationMessage() {
     }
 
-    public ReplicationMessage(K key, V v, Vector vector, String memberId, int hash) {
-        this.key = key;
+    public ReplicationMessage(String replicatedMap, K key, V v, Vector vector, String memberId, int hash) {
+        this.replicatedMap = replicatedMap;
+    	this.key = key;
         this.value = v;
         this.vector = vector;
         this.memberId = memberId;
@@ -44,6 +46,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
     }
 
     public void writeData(ObjectDataOutput out) throws IOException {
+    	out.writeUTF(replicatedMap);
     	out.writeObject(key);
     	out.writeObject(value);
         vector.writeData(out);
@@ -52,6 +55,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
     }
 
     public void readData(ObjectDataInput in) throws IOException {
+    	replicatedMap = in.readUTF();
         key = in.readObject();
         value = in.readObject();
         vector = new Vector();
@@ -67,12 +71,17 @@ public class ReplicationMessage<K, V> implements DataSerializable {
     @Override
     public String toString() {
         return "ReplicationMessage{" +
-               "key=" + key +
+        		"replicatedMap=" + replicatedMap +
+               ", key=" + key +
                ", value=" + value +
                ", vector=" + vector +
-               ", origin=" + updateHash +
+               ", updateHash=" + updateHash +
                '}';
     }
+
+	String getReplicatedMap() {
+		return replicatedMap;
+	}
 
 	K getKey() {
 		return key;

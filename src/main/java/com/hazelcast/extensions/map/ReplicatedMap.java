@@ -27,13 +27,13 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
 
 	private static final long CLEANUP_TTL = TimeUnit.SECONDS.toMillis(10);
 	
-	private final String mapName;
+	private final String name;
     private final ConcurrentHashMap<K, ValueHolder<V>> map = new ConcurrentHashMap<K, ValueHolder<V>>();
     private final Object[] mutexes = new Object[32];
     private final ReplicationService<K, V> replicationService;
 
-    ReplicatedMap(String mapName, ReplicationService<K, V> replicationService) {
-    	this.mapName = mapName;
+    ReplicatedMap(String name, ReplicationService<K, V> replicationService) {
+    	this.name = name;
         for (int i = 0; i < mutexes.length; i++) {
             mutexes[i] = new Object();
         }
@@ -41,7 +41,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
     }
 
     public String getName() {
-    	return mapName;
+    	return name;
     }
     
     public V get(Object key) {
@@ -68,7 +68,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 current.setValue(value, hash);
             }
             vector.incrementClock(replicationService.getLocalMemberId());
-            replicationService.publish(new ReplicationMessage<K, V>(key, value, vector, replicationService.getLocalMemberId(), hash));
+            replicationService.publish(new ReplicationMessage<K, V>(name, key, value, vector, replicationService.getLocalMemberId(), hash));
         }
         return oldValue;
     }
@@ -85,7 +85,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                 old = current.getValue();
                 current.setValue(null, 0);
                 vector.incrementClock(replicationService.getLocalMemberId());
-                replicationService.publish(new ReplicationMessage(key, null, vector, replicationService.getLocalMemberId(), replicationService.getLocalMemberHash()));
+                replicationService.publish(new ReplicationMessage(name, key, null, vector, replicationService.getLocalMemberId(), replicationService.getLocalMemberHash()));
             }
         }
         return old;
@@ -171,7 +171,7 @@ public class ReplicatedMap<K, V> implements Map<K, V> {
                         applyTheUpdate(update, localEntry);
                     } else {
                     	currentVector.applyVector(updateVector);
-                        replicationService.publish(new ReplicationMessage<K, V>(update.getKey(), localEntry.getValue(),
+                        replicationService.publish(new ReplicationMessage<K, V>(name, update.getKey(), localEntry.getValue(),
                                 currentVector, replicationService.getLocalMemberId(), localEntry.getLatestUpdateHash()));
                     }
                 }

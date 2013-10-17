@@ -1,5 +1,7 @@
 package com.hazelcast.extensions.map;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -15,7 +17,7 @@ import com.hazelcast.core.MessageListener;
 
 public class ReplicationService<K, V> {
 
-	private final ReplicatedMap<K, V> replicatedMap;
+	private final ConcurrentMap<String, ReplicatedMap<K, V>> replicatedMaps = new ConcurrentHashMap<String, ReplicatedMap<K, V>>();
     private final ReplicationListener listener = new ReplicationListener();
     private final String topicId;
     private final ExecutorService executor;
@@ -24,7 +26,7 @@ public class ReplicationService<K, V> {
     private final String localMemberId;
     private final int localMemberHash;
 
-	public ReplicationService(HazelcastInstance hazelcast, String mapName) {
+	public ReplicationService(HazelcastInstance hazelcast) {
         final String name = "replicationService";
         final String threadName = hazelcast.getName() + "." + name;
         executor = Executors.newSingleThreadExecutor(new Factory(threadName + ".replicator"));
@@ -35,10 +37,14 @@ public class ReplicationService<K, V> {
         topic = hazelcast.getTopic(name);
         topicId = topic.addMessageListener(listener);
         scheduledExecutor.scheduleWithFixedDelay(new Cleaner(), 5, 5, TimeUnit.SECONDS);
-        replicatedMap = new ReplicatedMap<K,V>(mapName, this);
 	}
 	
-	public ReplicatedMap<K, V> getMap() {
+	public ReplicatedMap<K, V> getMap(String name) {
+		ReplicatedMap<K, V> replicatedMap = replicatedMaps.get(name);
+		if (replicatedMap == null) {
+			replicatedMaps.putIfAbsent(name, new ReplicatedMap<K, V>(name, this));
+			replicatedMap = replicatedMaps.get(name);
+		}
 		return replicatedMap;
 	}
 	
@@ -46,7 +52,10 @@ public class ReplicationService<K, V> {
     	topic.removeMessageListener(topicId);
         executor.shutdownNow();
         scheduledExecutor.shutdownNow();
-        replicatedMap.clear();
+        for (ReplicatedMap<K, V> replicatedMap : replicatedMaps.values()) {
+        	replicatedMap.clear();
+        }
+        replicatedMaps.clear();
     }
 	
 	int getLocalMemberHash() {
@@ -66,7 +75,7 @@ public class ReplicationService<K, V> {
         public void onMessage(final Message<ReplicationMessage<K, V>> message) {
             executor.submit(new Runnable() {
                 public void run() {
-                	replicatedMap.processUpdateMessage(message.getMessageObject());
+                	getMap(message.getMessageObject().getReplicatedMap()).processUpdateMessage(message.getMessageObject());
                 }
             });
         }
@@ -76,20 +85,22 @@ public class ReplicationService<K, V> {
     private class Cleaner implements Runnable {
 
         public void run() {
-        	replicatedMap.cleanup();
+        	for (ReplicatedMap<K, V> replicatedMap : replicatedMaps.values()) {
+        		replicatedMap.cleanup();
+        	}
         }
     }
 	
     private class Factory implements ThreadFactory {
 
-        private final String name;
+        private final String threadName;
 
-        private Factory(final String name) {
-            this.name = name;
+        private Factory(final String threadName) {
+            this.threadName = threadName;
         }
 
         public Thread newThread(final Runnable r) {
-            final Thread t = new Thread(r, name);
+            final Thread t = new Thread(r, threadName);
             t.setDaemon(true);
             return t;
         }

@@ -52,7 +52,7 @@ public class ReplicatedMapTest {
         final ReplicatedMap<Integer, Integer> maps[] = new ReplicatedMap[k];
         for (int i = 0; i < k; i++) {
             hz[i] = Hazelcast.newHazelcastInstance(config);
-            maps[i] = new ReplicationService<Integer, Integer>(hz[i], "test").getMap();
+            maps[i] = new ReplicationService<Integer, Integer>(hz[i]).getMap("test");
         }
         hz[k - 1].getPartitionService().getPartition(1).getOwner();
         Thread.sleep(5000);
