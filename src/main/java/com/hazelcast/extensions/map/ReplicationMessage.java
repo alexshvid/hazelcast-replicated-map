@@ -22,13 +22,13 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
 
-public class ReplicationMessage<K, V> implements DataSerializable {
+public class ReplicationMessage implements DataSerializable {
 
 	private static final long serialVersionUID = -4815192795649067789L;
 
 	private String replicatedMap;
-	private K key;
-    private V value;
+	private Object key;
+    private Object value;
     private Vector vector;
     private String memberId;
     private int updateHash;
@@ -36,7 +36,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
     public ReplicationMessage() {
     }
 
-    public ReplicationMessage(String replicatedMap, K key, V v, Vector vector, String memberId, int hash) {
+    public ReplicationMessage(String replicatedMap, Object key, Object v, Vector vector, String memberId, int hash) {
         this.replicatedMap = replicatedMap;
     	this.key = key;
         this.value = v;
@@ -83,7 +83,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
 		return replicatedMap;
 	}
 
-	K getKey() {
+	Object getKey() {
 		return key;
 	}
 
@@ -99,7 +99,7 @@ public class ReplicationMessage<K, V> implements DataSerializable {
 		return updateHash;
 	}
 
-	V getValue() {
+	Object getValue() {
 		return value;
 	}
 

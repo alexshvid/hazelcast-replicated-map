@@ -3,11 +3,13 @@ Replicated map implementation using Hazelcast.
 ###Usage:
 
 ````java
-final HazelcastInstance hz = Hazelcast.newHazelcastInstance(null);
-ReplicatedMap<Integer, String> map = new ReplicatedMap<Integer, String>(hz, "test");
+HazelcastInstance hz = Hazelcast.newHazelcastInstance(null);
+ReplicationService rs = new ReplicationService(hz);
+ReplicatedMap<Integer, String> map = rs.getMap("test");
 
-final HazelcastInstance hz2 = Hazelcast.newHazelcastInstance(null);
-ReplicatedMap<Integer, String> map2 = new ReplicatedMap<Integer, String>(hz2, "test");
+HazelcastInstance hz2 = Hazelcast.newHazelcastInstance(null);
+ReplicationService rs2 = new ReplicationService(hz2);
+ReplicatedMap<Integer, String> map2 = rs2.getMap("test");
 
 for (int i = 0; i < 10000; i++) {
    map.put(i, "test" + i);
@@ -15,3 +17,7 @@ for (int i = 0; i < 10000; i++) {
 
 Thread.sleep(2000); // wait for async replication to complete
 System.out.println(map2.size()); // should be equal to 10000
+
+rs.shutdownNow();
+rs2.shutdownNow();		
+Hazelcast.shutdownAll();

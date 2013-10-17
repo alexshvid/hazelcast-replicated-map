@@ -15,14 +15,14 @@ import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 
 
-public class ReplicationService<K, V> {
+public class ReplicationService {
 
-	private final ConcurrentMap<String, ReplicatedMap<K, V>> replicatedMaps = new ConcurrentHashMap<String, ReplicatedMap<K, V>>();
+	private final ConcurrentMap<String, ReplicatedMap> replicatedMaps = new ConcurrentHashMap<String, ReplicatedMap>();
     private final ReplicationListener listener = new ReplicationListener();
     private final String topicId;
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduledExecutor;
-    private final ITopic<ReplicationMessage<K, V>> topic;
+    private final ITopic<ReplicationMessage> topic;
     private final String localMemberId;
     private final int localMemberHash;
 
@@ -39,20 +39,20 @@ public class ReplicationService<K, V> {
         scheduledExecutor.scheduleWithFixedDelay(new Cleaner(), 5, 5, TimeUnit.SECONDS);
 	}
 	
-	public ReplicatedMap<K, V> getMap(String name) {
+	public <K,V> ReplicatedMap<K, V> getMap(String name) {
 		ReplicatedMap<K, V> replicatedMap = replicatedMaps.get(name);
 		if (replicatedMap == null) {
-			replicatedMaps.putIfAbsent(name, new ReplicatedMap<K, V>(name, this));
+			replicatedMaps.putIfAbsent(name, new ReplicatedMap(name, this));
 			replicatedMap = replicatedMaps.get(name);
 		}
 		return replicatedMap;
 	}
 	
-    public void destroy() {
+    public void shutdownNow() {
     	topic.removeMessageListener(topicId);
         executor.shutdownNow();
         scheduledExecutor.shutdownNow();
-        for (ReplicatedMap<K, V> replicatedMap : replicatedMaps.values()) {
+        for (ReplicatedMap replicatedMap : replicatedMaps.values()) {
         	replicatedMap.clear();
         }
         replicatedMaps.clear();
@@ -66,13 +66,13 @@ public class ReplicationService<K, V> {
 		return localMemberId;
 	}
 	
-	void publish(ReplicationMessage<K, V> message) {
+	void propagate(ReplicationMessage message) {
 		topic.publish(message);
 	}
 	
-    private class ReplicationListener implements MessageListener<ReplicationMessage<K, V>> {
+    private class ReplicationListener implements MessageListener<ReplicationMessage> {
 
-        public void onMessage(final Message<ReplicationMessage<K, V>> message) {
+        public void onMessage(final Message<ReplicationMessage> message) {
             executor.submit(new Runnable() {
                 public void run() {
                 	getMap(message.getMessageObject().getReplicatedMap()).processUpdateMessage(message.getMessageObject());
@@ -85,7 +85,7 @@ public class ReplicationService<K, V> {
     private class Cleaner implements Runnable {
 
         public void run() {
-        	for (ReplicatedMap<K, V> replicatedMap : replicatedMaps.values()) {
+        	for (ReplicatedMap replicatedMap : replicatedMaps.values()) {
         		replicatedMap.cleanup();
         	}
         }

@@ -33,26 +33,21 @@ import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 
-public class ReplicatedMapTest {
+public class ReplicatedMapTest extends SystemProperties {
 
-    static {
-        System.setProperty("hazelcast.version.check.enabled", "false");
-        System.setProperty("hazelcast.logging.type", "log4j");
-        System.setProperty("hazelcast.multicast.group", "224.3.3.3");
-        System.setProperty("hazelcast.local.localAddress", "127.0.0.1");
-        System.setProperty("hazelcast.wait.seconds.before.join", "0");
-        System.setProperty("java.net.preferIPv4Stack", "true");
-    }
-
+	private static final int k = 4;
+	
     @Test
     public void test() throws InterruptedException {
         Config config = new Config();
-        final int k = 4;
         final HazelcastInstance[] hz = new HazelcastInstance[k];
+        final ReplicationService rs[] = new ReplicationService[k];
         final ReplicatedMap<Integer, Integer> maps[] = new ReplicatedMap[k];
+        
         for (int i = 0; i < k; i++) {
             hz[i] = Hazelcast.newHazelcastInstance(config);
-            maps[i] = new ReplicationService<Integer, Integer>(hz[i]).getMap("test");
+            rs[i] = new ReplicationService(hz[i]);
+            maps[i] = rs[i].getMap("test");
         }
         hz[k - 1].getPartitionService().getPartition(1).getOwner();
         Thread.sleep(5000);
@@ -103,6 +98,9 @@ public class ReplicatedMapTest {
                 }
             }
         } finally {
+        	for (ReplicationService r : rs) {
+        		r.shutdownNow();
+        	}
             Hazelcast.shutdownAll();
         }
 
