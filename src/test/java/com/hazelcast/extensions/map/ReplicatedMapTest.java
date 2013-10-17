@@ -38,7 +38,7 @@ public class ReplicatedMapTest extends SystemProperties {
 	private static final int k = 4;
 	
     @Test
-    public void test() throws InterruptedException {
+    public void testReplicatedMaps() throws InterruptedException {
         Config config = new Config();
         final HazelcastInstance[] hz = new HazelcastInstance[k];
         final ReplicationService rs[] = new ReplicationService[k];
@@ -98,9 +98,6 @@ public class ReplicatedMapTest extends SystemProperties {
                 }
             }
         } finally {
-        	for (ReplicationService r : rs) {
-        		r.shutdownNow();
-        	}
             Hazelcast.shutdownAll();
         }
 

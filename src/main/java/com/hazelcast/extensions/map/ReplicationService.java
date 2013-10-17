@@ -10,12 +10,15 @@ import java.util.concurrent.TimeUnit;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ITopic;
+import com.hazelcast.core.LifecycleEvent;
+import com.hazelcast.core.LifecycleEvent.LifecycleState;
+import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 
 
-public class ReplicationService {
+public class ReplicationService implements LifecycleListener {
 
 	private final ConcurrentMap<String, ReplicatedMap> replicatedMaps = new ConcurrentHashMap<String, ReplicatedMap>();
     private final ReplicationListener listener = new ReplicationListener();
@@ -37,6 +40,7 @@ public class ReplicationService {
         topic = hazelcast.getTopic(name);
         topicId = topic.addMessageListener(listener);
         scheduledExecutor.scheduleWithFixedDelay(new Cleaner(), 5, 5, TimeUnit.SECONDS);
+        hazelcast.getLifecycleService().addLifecycleListener(this);
 	}
 	
 	public <K,V> ReplicatedMap<K, V> getMap(String name) {
@@ -46,6 +50,12 @@ public class ReplicationService {
 			replicatedMap = replicatedMaps.get(name);
 		}
 		return replicatedMap;
+	}
+	
+	public void stateChanged(LifecycleEvent event) {
+		if (LifecycleState.SHUTTING_DOWN.equals(event.getState())) {
+			shutdownNow();
+		}
 	}
 	
     public void shutdownNow() {

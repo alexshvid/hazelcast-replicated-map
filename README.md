@@ -17,7 +17,5 @@ for (int i = 0; i < 10000; i++) {
 
 Thread.sleep(2000); // wait for async replication to complete
 System.out.println(map2.size()); // should be equal to 10000
-
-rs.shutdownNow();
-rs2.shutdownNow();		
+	
 Hazelcast.shutdownAll();
